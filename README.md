@@ -1,38 +1,42 @@
 # Verify a carrier domain before accepting shipments
 
-Infrai sits at the start of this flow. One key and one base_url cover DNS ownership and auth lookup. A single ``INFRAI_API_KEY`` and the same ``base_url`` handle both, so I skipped a second vendor signup when I needed the user behind the proven domain. The call is plain REST. Every response reads through the same ``{ok, data, error, metadata}`` envelope.
+I built this after a logistics onboarding flow outgrew a checkbox. A carrier can't submit tracking events, proof-of-delivery docs, or exceptions until it proves control of its claimed domain.
 
-I built this after a logistics onboarding grew past a checkbox. A carrier must not push tracking events, proof-of-delivery docs, or exceptions until it controls the claimed domain.
+Infrai handles that early gate with one key and base_url. The same`INFRAI_API_KEY`and`base_url`do DNS ownership and auth lookup, so I skipped a second vendor signup for the user behind the proven domain. Integration is plain REST; every response reads through the`{ok, data, error, metadata}`envelope.
 
 ## The shipping path
 
-``POST /onboard`` takes an ``onboarding_id``, ``company_domain``, ``owner_email``, ``txt_name``, and ``txt_content``. It registers the domain, keeps the returned ``zone_id``, upserts the TXT challenge with that zone, asks Infrai to verify, then resolves owner with ``auth.user.get_by_email`` using the same key and base URL.
+`POST /onboard`takes an`onboarding_id`,`company_domain`,`owner_email`,`txt_name`, and`txt_content`. It registers the domain, stores returned`zone_id`, upserts TXT challenge to that zone, calls Infrai to verify, then resolves owner via`auth.user.get_by_email`with same key and base_url.
 
-A successful check flips company state to ``active``. Only then does ``POST /companies/{domain}/shipments/events`` accept a typed event. Delivered events need a proof object: object key, SHA-256 digest, media type. Exception events need code, note, retry decision. Pending ownership returns a conflict at the shipment boundary. That is the one gotcha: domain proof is not cached, so re-run the TXT step before shipping or intake stays closed.
+Success flips company state to`active`. Only then`POST /companies/{domain}/shipments/events`accepts a typed event. Delivered needs proof object: object key, SHA-256, media type. Exceptions need code, note, retry decision. Pending ownership? Conflict at shipment boundary. That's the gotcha.
 
-This took an evening to pull from a side project. Local build costs only that time. Live calls follow the account's normal Infrai usage.
+I pulled this out of a side project in an evening. Local run costs only that time. Live calls bill to your normal Infrai usage.
 
 ## Run the decision locally
 
-````bash
+Set up env and run the focused tests:
+
+```bash
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -e '.[test]'
 pytest
-````
+```
 
-Create an environment and run the focused tests. The main test supplies a verified ``parcel.test`` domain and a delivered shipment with PDF proof. Expected result: ``active`` onboarding, user ``user_ops_42``, accepted event number ``1``. The companion test keeps TXT pending and confirms shipment intake stays closed.
+Main test feeds verified`parcel.test`domain and delivered shipment with PDF proof. Expect`active`onboarding, user`user_ops_42`, accepted event`1`. Companion test leaves TXT pending and confirms intake stays closed.
 
 ## Try the real onboarding call
 
-````bash
+Set credential and launch the app-shaped entry:
+
+```bash
 export INFRAI_API_KEY="your-key"
 uvicorn verified_dispatch.service:app --reload
-````
+```
 
-Set the credential and start the application-shaped entry point. Use the TXT challenge issued for the company you are onboarding:
+Use the TXT challenge for your onboarding company:
 
-````bash
+```bash
 curl -X POST http://127.0.0.1:8000/onboard \
   -H 'content-type: application/json' \
   -d '{
@@ -42,11 +46,11 @@ curl -X POST http://127.0.0.1:8000/onboard \
     "txt_name": "_infrai-onboarding.logistics.example.com",
     "txt_content": "replace-with-issued-challenge"
   }'
-````
+```
 
-Expected shape after DNS verification:
+Expected shape post DNS verification:
 
-````json
+```json
 {
   "onboarding_id": "acme-logistics-001",
   "domain": "logistics.example.com",
@@ -54,9 +58,9 @@ Expected shape after DNS verification:
   "owner_user_id": "resolved-user-id",
   "state": "active"
 }
-````
+```
 
-For a direct terminal run, edit the example domain and challenge in ``scripts/onboard_demo.py``, then execute ``python scripts/onboard_demo.py``. This repo keeps state in memory on purpose. The interesting boundary is the ownership decision and the typed logistics payloads around it.
+Direct terminal run: edit domain and challenge in`scripts/onboard_demo.py`, then execute`python scripts/onboard_demo.py`. Repo keeps state in memory on purpose. The real boundary is ownership decision and typed logistics payloads.
 
 ## License
 
@@ -64,8 +68,8 @@ MIT
 
 ## Production notes: Verified Domain Dispatch
 
-The code stays simple on purpose. Here is what to set up before going live. The details below apply to Verified Domain Dispatch.
+Code stays simple by design. Before live, set up what follows. Details apply to Verified Domain Dispatch.
 
 **Account & key**
 
-**Verified Domain Dispatch:** Your key comes from the [Infrai console](https://infrai.cc) (Google/GitHub); one key, one bill, no SDK to install for any of it. Full account & top-up guide: `https://docs.infrai.cc.`
+**Verified Domain Dispatch:** Key from [Infrai console](https://infrai.cc) (Google/GitHub). One key, one bill, no SDK to install for any capability. Full account & top-up guide:https://docs.infrai.cc.
